@@ -5,7 +5,7 @@ from datetime import datetime
 # Configurações do servidor
 SERVER_IP = "0.0.0.0"
 SERVER_PORT = 12345
-BUFFER_SIZE = 1024
+BUFFER_SIZE = 1024  # Tamanho fixo do buffer
 
 # Lista de clientes conectados
 clientes = {}
@@ -17,11 +17,35 @@ server_socket.bind((SERVER_IP, SERVER_PORT))
 
 print(f"✅ Servidor rodando em {SERVER_IP}:{SERVER_PORT}")
 
+def fragmentar_mensagem(mensagem):
+    """Fragmenta a mensagem em pedaços menores que BUFFER_SIZE, considerando o cabeçalho."""
+    fragmentos = []
+    tamanho_max_fragmento = BUFFER_SIZE - 20  # Reserva espaço para o cabeçalho (ex: "0/100:")
+    total_fragmentos = (len(mensagem)) // tamanho_max_fragmento + 1  # Calcula o total de fragmentos
+    
+    for i in range(0, len(mensagem), tamanho_max_fragmento):
+        fragmento = mensagem[i:i + tamanho_max_fragmento]
+        fragmentos.append(fragmento)
+        print(f"Fragmento {i}: {fragmento}")  # Log para depuração
+    
+    return fragmentos, total_fragmentos
+
 def broadcast(mensagem, remetente):
-    """Envia a mensagem para todos os clientes conectados, exceto o remetente."""
+    """Envia a mensagem fragmentada para todos os clientes conectados, exceto o remetente."""
+    fragmentos, total_fragmentos = fragmentar_mensagem(mensagem)
+    
     for cliente, nome in clientes.items():
         if cliente != remetente:
-            server_socket.sendto(mensagem.encode(), cliente)
+            try:
+                for i, fragmento in enumerate(fragmentos):
+                    pacote = f"{i}/{total_fragmentos}:{fragmento}"
+                    server_socket.sendto(pacote.encode(), cliente)
+                    print(f"Enviando fragmento para {nome}: {pacote}")  # Log para depuração
+                
+                # Indicador de fim da mensagem
+                server_socket.sendto("FIM_MENSAGEM".encode(), cliente)
+            except Exception as e:
+                print(f"Erro ao enviar para {nome}: {e}")
 
 def handle_client():
     """Gerencia a recepção de mensagens dos clientes."""
@@ -44,27 +68,30 @@ def handle_client():
                 continue
             
             if mensagem == "FIM_MENSAGEM":
-                # Montar a mensagem completa
-                fragmentos = mensagens_pendentes.pop(client_address, [])
-                mensagem_completa = "".join(fragmentos)
-                nome_usuario = clientes.get(client_address, "Desconhecido")
-                timestamp = datetime.now().strftime("%H:%M:%S %d/%m/%Y")
-                mensagem_formatada = f"{nome_usuario}: {mensagem_completa} ({timestamp})"
-                print(mensagem_formatada)
-                broadcast(mensagem_formatada, client_address)
+                if client_address in mensagens_pendentes:
+                    fragmentos = mensagens_pendentes.pop(client_address, [])
+                    mensagem_completa = "".join(fragmentos)
+                    print(f"Mensagem reconstruída: {mensagem_completa}")  # Log para depuração
+                    nome_usuario = clientes.get(client_address, "Desconhecido")
+                    timestamp = datetime.now().strftime("%H:%M:%S %d/%m/%Y")
+                    mensagem_formatada = f"{nome_usuario}: {mensagem_completa} ({timestamp})"
+                    broadcast(mensagem_formatada, client_address)
                 continue
             
-            # Verifica se é um fragmento de mensagem
             if "/" in mensagem and ":" in mensagem:
-                indice, conteudo = mensagem.split(":", 1)
-                posicao, total = indice.split("/")
-                posicao = int(posicao)
-                total = int(total)
-                
-                if client_address not in mensagens_pendentes:
-                    mensagens_pendentes[client_address] = [""] * total
-                
-                mensagens_pendentes[client_address][posicao] = conteudo
+                try:
+                    indice, conteudo = mensagem.split(":", 1)
+                    posicao, total = indice.split("/")
+                    posicao = int(posicao)
+                    total = int(total)
+                    
+                    if client_address not in mensagens_pendentes:
+                        mensagens_pendentes[client_address] = [""] * total
+                    
+                    mensagens_pendentes[client_address][posicao] = conteudo
+                    print(f"Fragmento recebido de {client_address}: {mensagem}")  # Log para depuração
+                except (ValueError, IndexError) as e:
+                    print(f"Erro ao processar fragmento: {e}")
         
         except Exception as e:
             print(f"Erro: {e}")
