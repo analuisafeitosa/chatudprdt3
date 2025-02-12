@@ -1,6 +1,5 @@
 import socket
 import threading
-import os
 from datetime import datetime
 
 # Configurações do servidor
@@ -10,6 +9,7 @@ BUFFER_SIZE = 1024
 
 # Lista de clientes conectados
 clientes = {}
+mensagens_pendentes = {}
 
 # Criando o socket UDP
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -43,11 +43,28 @@ def handle_client():
                 broadcast(f"{nome_usuario} saiu da sala", client_address)
                 continue
             
-            nome_usuario = clientes.get(client_address, "Desconhecido")
-            timestamp = datetime.now().strftime("%H:%M:%S %d/%m/%Y")
-            mensagem_formatada = f"{client_address[0]}:{client_address[1]}/~{nome_usuario}: {mensagem} {timestamp}"
-            print(mensagem_formatada)
-            broadcast(mensagem_formatada, client_address)
+            if mensagem == "FIM_MENSAGEM":
+                # Montar a mensagem completa
+                fragmentos = mensagens_pendentes.pop(client_address, [])
+                mensagem_completa = "".join(fragmentos)
+                nome_usuario = clientes.get(client_address, "Desconhecido")
+                timestamp = datetime.now().strftime("%H:%M:%S %d/%m/%Y")
+                mensagem_formatada = f"{nome_usuario}: {mensagem_completa} ({timestamp})"
+                print(mensagem_formatada)
+                broadcast(mensagem_formatada, client_address)
+                continue
+            
+            # Verifica se é um fragmento de mensagem
+            if "/" in mensagem and ":" in mensagem:
+                indice, conteudo = mensagem.split(":", 1)
+                posicao, total = indice.split("/")
+                posicao = int(posicao)
+                total = int(total)
+                
+                if client_address not in mensagens_pendentes:
+                    mensagens_pendentes[client_address] = [""] * total
+                
+                mensagens_pendentes[client_address][posicao] = conteudo
         
         except Exception as e:
             print(f"Erro: {e}")

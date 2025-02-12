@@ -1,6 +1,7 @@
 import socket
 import threading
 import os
+
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 12345
 BUFFER_SIZE = 1024
@@ -19,6 +20,14 @@ def receive_messages():
         except:
             break
 
+def fragmentar_mensagem(mensagem):
+    """Fragmenta a mensagem em pedaços de tamanho BUFFER_SIZE."""
+    fragmentos = []
+    for i in range(0, len(mensagem), BUFFER_SIZE - 10):  # Reservando espaço para cabeçalho
+        fragmento = mensagem[i:i + BUFFER_SIZE - 10]
+        fragmentos.append(fragmento)
+    return fragmentos
+
 threading.Thread(target=receive_messages, daemon=True).start()
 
 while True:
@@ -28,18 +37,13 @@ while True:
         print("👋 Saindo do chat...")
         break
     
-    # Criar arquivo temporário para envio
-    with open("mensagem.txt", "w", encoding="utf-8") as file:
-        file.write(mensagem)
+    fragmentos = fragmentar_mensagem(mensagem)
     
-    # Ler e enviar fragmentado
-    with open("mensagem.txt", "r", encoding="utf-8") as file:
-        while True:
-            chunk = file.read(BUFFER_SIZE)
-            if not chunk:
-                break
-            client_socket.sendto(chunk.encode(), (SERVER_IP, SERVER_PORT))
+    for i, fragmento in enumerate(fragmentos):
+        pacote = f"{i}/{len(fragmentos)}:{fragmento}"
+        client_socket.sendto(pacote.encode(), (SERVER_IP, SERVER_PORT))
     
-    os.remove("mensagem.txt")
+    # Indicador de fim da mensagem
+    client_socket.sendto("FIM_MENSAGEM".encode(), (SERVER_IP, SERVER_PORT))
 
 client_socket.close()
