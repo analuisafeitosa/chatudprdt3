@@ -1,104 +1,112 @@
 import socket
+import os
+import queue
+import math
 import threading
-from datetime import datetime
+import struct
+from zlib import crc32
 
-# Configurações do servidor
-SERVER_IP = "0.0.0.0"
-SERVER_PORT = 12345
-BUFFER_SIZE = 1024  # Tamanho fixo do buffer
+# Configuração do Servidor
+clients = []
+messages = queue.Queue()
+server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+server.bind(('localhost', 7777))
 
-# Lista de clientes conectados
-clientes = {}
-mensagens_pendentes = {}
+# Armazenamento de fragmentos recebidos
+frags_received_list = []
+frags_received_count = 0
 
-# Criando o socket UDP
-server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-server_socket.bind((SERVER_IP, SERVER_PORT))
+# Função que cria fragmentos
+def create_fragment(payload, frag_size, frag_index, frags_numb):
+    data = payload[:frag_size]
+    crc = crc32(data)
+    header = struct.pack('!IIII', frag_size, frag_index, frags_numb, crc)
+    return header + data
 
-print(f"✅ Servidor rodando em {SERVER_IP}:{SERVER_PORT}")
+# Verificação da Integridade dos dados recebidos por meio de desempacotamento e reagrupação
+def unpack_and_reassemble(data, addr):
+    global frags_received_count, frags_received_list
+    header = data[:16]
+    message_in_bytes = data[16:]
+    frag_size, frag_index, frags_numb, crc = struct.unpack('!IIII', header)
+    # Verificar CRC
+    if crc != crc32(message_in_bytes):
+        print("Fragmento com CRC inválido, ignorando.")
+        return
+    if len(frags_received_list) < frags_numb:
+        add = frags_numb - len(frags_received_list)
+        frags_received_list.extend([None] * add)
+    frags_received_list[frag_index] = message_in_bytes
+    frags_received_count += 1
+    if frags_received_count == frags_numb:
+        with open('received_message.txt', 'wb') as file:
+            for fragment in frags_received_list:
+                file.write(fragment)
+        frags_received_count = 0
+        frags_received_list = []
+        process_received_message(addr)  # Processa a mensagem recebida
+    elif (frags_received_count < frags_numb) and (frag_index == frags_numb - 1):
+        print("Provavelmente houve perda de pacotes")
+        frags_received_count = 0
+        frags_received_list = []
 
-def fragmentar_mensagem(mensagem):
-    """Fragmenta a mensagem em pedaços menores que BUFFER_SIZE, considerando o cabeçalho."""
-    fragmentos = []
-    tamanho_max_fragmento = BUFFER_SIZE - 20  # Reserva espaço para o cabeçalho (ex: "0/100:")
-    total_fragmentos = (len(mensagem)) // tamanho_max_fragmento + 1  # Calcula o total de fragmentos
-    
-    for i in range(0, len(mensagem), tamanho_max_fragmento):
-        fragmento = mensagem[i:i + tamanho_max_fragmento]
-        fragmentos.append(fragmento)
-        print(f"Fragmento {i}: {fragmento}")  # Log para depuração
-    
-    return fragmentos, total_fragmentos
+# Processa a mensagem e a trata caso seja uma confirmação de Login, Log out ou apenas uma mensagem qualquer.
+def process_received_message(addr):
+    with open('received_message.txt', 'r') as file:
+        file_content = file.read()
+    os.remove('received_message.txt')
+    for line in file_content.strip().split('\n'):
+        line = line.strip()
+        if "SIGNUP_TAG:" in line:
+            name = line.split(":")[1]
+            sent_msg = f"{name} entrou na sala"
+            print(f"{addr} entrou na sala")
+            messages.put(sent_msg)
+        elif "SIGNOUT_TAG:" in line:
+            name = line.split(":")[1]
+            sent_msg = f"{name} saiu da sala"
+            print(f"{addr} saiu da sala")
+            clients.remove(addr)  # Remove o cliente da lista de clientes
+            print(f"Nova lista de Clientes: {clients}")
+            messages.put(sent_msg)
+        else:
+            messages.put(line)
+            print(f"Mensagem recebida de {addr} processada.")
+    send_to_all_clients(addr)
 
-def broadcast(mensagem, remetente):
-    """Envia a mensagem fragmentada para todos os clientes conectados, exceto o remetente."""
-    fragmentos, total_fragmentos = fragmentar_mensagem(mensagem)
-    
-    for cliente, nome in clientes.items():
-        if cliente != remetente:
-            try:
-                for i, fragmento in enumerate(fragmentos):
-                    pacote = f"{i}/{total_fragmentos}:{fragmento}"
-                    server_socket.sendto(pacote.encode(), cliente)
-                    print(f"Enviando fragmento para {nome}: {pacote}")  # Log para depuração
-                
-                # Indicador de fim da mensagem
-                server_socket.sendto("FIM_MENSAGEM".encode(), cliente)
-            except Exception as e:
-                print(f"Erro ao enviar para {nome}: {e}")
+# Faz o broadcast da mensagem para os clientes
+def send_to_all_clients(sender_addr):
+    frag_index = 0
+    frag_size = 1008
+    while not messages.empty():
+        message = messages.get()
+        with open('message_server.txt', 'w') as file:
+            file.write(message)
+        with open('message_server.txt', 'rb') as file:
+            payload = file.read()
+            frags_numb = math.ceil(len(payload) / frag_size)
+            for client in clients:
+                if client != sender_addr:  # Evitar enviar para o remetente original
+                    fragment_payload = payload
+                    fragment_index = 0
+                    while fragment_payload:
+                        fragment = create_fragment(fragment_payload, frag_size, fragment_index, frags_numb)
+                        server.sendto(fragment, client)
+                        fragment_payload = fragment_payload[frag_size:]
+                        fragment_index += 1
+                    print(f"Mensagem enviada para {client}\n") 
+        os.remove('message_server.txt')
 
-def handle_client():
-    """Gerencia a recepção de mensagens dos clientes."""
+# Função de receber dados
+def receive():
     while True:
-        try:
-            data, client_address = server_socket.recvfrom(BUFFER_SIZE)
-            mensagem = data.decode()
-            
-            if mensagem.startswith("hi, meu nome eh"):
-                nome_usuario = mensagem.split(" ")[-1]
-                clientes[client_address] = nome_usuario
-                print(f"👤 {nome_usuario} ({client_address}) entrou na sala")
-                broadcast(f"{nome_usuario} entrou na sala", client_address)
-                continue
-            
-            if mensagem.lower() == "bye":
-                nome_usuario = clientes.pop(client_address, "Usuário desconhecido")
-                print(f"🚪 {nome_usuario} ({client_address}) saiu da sala")
-                broadcast(f"{nome_usuario} saiu da sala", client_address)
-                continue
-            
-            if mensagem == "FIM_MENSAGEM":
-                if client_address in mensagens_pendentes:
-                    fragmentos = mensagens_pendentes.pop(client_address, [])
-                    mensagem_completa = "".join(fragmentos)
-                    print(f"Mensagem reconstruída: {mensagem_completa}")  # Log para depuração
-                    nome_usuario = clientes.get(client_address, "Desconhecido")
-                    timestamp = datetime.now().strftime("%H:%M:%S %d/%m/%Y")
-                    mensagem_formatada = f"{nome_usuario}: {mensagem_completa} ({timestamp})"
-                    broadcast(mensagem_formatada, client_address)
-                continue
-            
-            if "/" in mensagem and ":" in mensagem:
-                try:
-                    indice, conteudo = mensagem.split(":", 1)
-                    posicao, total = indice.split("/")
-                    posicao = int(posicao)
-                    total = int(total)
-                    
-                    if client_address not in mensagens_pendentes:
-                        mensagens_pendentes[client_address] = [""] * total
-                    
-                    mensagens_pendentes[client_address][posicao] = conteudo
-                    print(f"Fragmento recebido de {client_address}: {mensagem}")  # Log para depuração
-                except (ValueError, IndexError) as e:
-                    print(f"Erro ao processar fragmento: {e}")
-        
-        except Exception as e:
-            print(f"Erro: {e}")
-            continue
+        data, addr = server.recvfrom(1024)
+        print("Mensagem recebida")
+        if addr not in clients:
+            clients.append(addr)
+            print(f"Lista de Clientes: {clients}")
+        unpack_and_reassemble(data, addr)
 
-# Inicia a thread do servidor
-threading.Thread(target=handle_client, daemon=True).start()
-
-while True:
-    pass  # Mantém o servidor rodando
+# Inicia o thread para receber dados
+thread = threading.Thread(target=receive)
+thread.start()
