@@ -1,4 +1,4 @@
-# 🖥️ **Cliente e Servidor UDP com Fragmentação de Mensagens** 🖥️
+# 🖥️ **Cliente e Servidor UDP com Fragmentação de Mensagens** 
 
 Este repositório contém dois scripts em Python para simular uma comunicação entre **cliente** e **servidor** utilizando o protocolo UDP, onde as mensagens são fragmentadas, transmitidas e reagrupadas com verificação de integridade via CRC32.
 
