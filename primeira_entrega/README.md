@@ -82,6 +82,12 @@ Essa abordagem foi fundamental para resolver os problemas de confiabilidade e in
 
 ---
 
+## **Equipe**
+[Ana luisa feitosa <alfg>](https://github.com/seu-usuario)
+[Lucas dos Santos Silva <lss11>](https://github.com/seu-usuario)
+[Maria Clara Gomes <mcga>](https://github.com/seu-usuario)
+
+
 ## 📄 **Arquivos do Projeto**
 
 ### **Cliente:**
