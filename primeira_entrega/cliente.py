@@ -109,7 +109,7 @@ def main():
                     file.write(formatted_message)
                 send_txt()
             else:
-                print("Para conectar, digite 'hi, meu nome eh' e forneça seu nome de usuário.")
+                print("Mensagem não enviada, você deve se conectar primeiro. Para conectar, digite 'hi, meu nome eh' e forneça seu nome de usuário.")
 
 # Inicia o thread de recebimento
 thread1 = threading.Thread(target=receive)
