@@ -23,7 +23,7 @@ def create_fragment(payload, frag_size, frag_index, frags_numb):
     header = struct.pack('!IIII', frag_size, frag_index, frags_numb, crc)
     return header + data
 
-# Verificação da Integridade dos dados recebidos por meio de desempacotamento e reagrupação
+# Verificação da Integridade dos dados recebidos por meio de desempacotamento e reagrupamento
 def unpack_and_reassemble(data, addr):
     global frags_received_count, frags_received_list
     header = data[:16]
