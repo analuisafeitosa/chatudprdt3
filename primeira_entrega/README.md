@@ -17,9 +17,9 @@ Este repositório contém dois scripts em Python para simular uma comunicação 
 ## 🚀 **Como Usar**
 
 ### 🧑‍💻 **Cliente**:
-1. Defina o nome de usuário com o comando `hi, meu nome eh <username>`.
+1. Defina o nome de usuário com o comando `Oi, meu nome eh <username>`.
 2. Envie suas mensagens.
-3. Para desconectar, digite `bye`.
+3. Para desconectar, digite `tchau`.
 
 ### 🖥️ **Servidor**:
 1. O servidor aguarda por fragmentos de mensagem de clientes.
