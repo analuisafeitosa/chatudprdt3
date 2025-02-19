@@ -7,106 +7,137 @@ import struct
 from zlib import crc32
 
 # Configuração do Servidor
-clients = []
-messages = queue.Queue()
-server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-server.bind(('localhost', 7777))
+usuarios_conectados = []  # Lista de clientes conectados
+fila_mensagens = queue.Queue()
+servidor = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+servidor.bind(('localhost', 7777))  # Define o endereço e a porta do servidor
 
-# Armazenamento de fragmentos recebidos
-frags_received_list = []
-frags_received_count = 0
+# Armazena fragmentos recebidos
+lista_fragmentos = []
+contador_fragmentos = 0
 
-# Função que cria fragmentos
-def create_fragment(payload, frag_size, frag_index, frags_numb):
-    data = payload[:frag_size]
-    crc = crc32(data)
-    header = struct.pack('!IIII', frag_size, frag_index, frags_numb, crc)
-    return header + data
+# Função para criar fragmentos de dados
+def gerar_fragmento(dados, tamanho_fragmento, indice_fragmento, total_fragmentos):
+    
+    #Divide os dados em partes menores (fragmentos) para envio.
+    #Adiciona um cabeçalho contendo informações como tamanho, índice, total e checksum (CRC32).
+    
+    parte_dados = dados[:tamanho_fragmento]
+    checksum = crc32(parte_dados)
+    cabecalho = struct.pack('!IIII', tamanho_fragmento, indice_fragmento, total_fragmentos, checksum)
+    return cabecalho + parte_dados
 
-# Verificação da Integridade dos dados recebidos por meio de desempacotamento e reagrupamento
-def unpack_and_reassemble(data, addr):
-    global frags_received_count, frags_received_list
-    header = data[:16]
-    message_in_bytes = data[16:]
-    frag_size, frag_index, frags_numb, crc = struct.unpack('!IIII', header)
-    # Verificar CRC
-    if crc != crc32(message_in_bytes):
-        print("Fragmento com CRC inválido, ignorando.")
+# Função para reconstruir a mensagem original a partir dos fragmentos recebidos
+def reconstruir_mensagem(dados_recebidos, endereco_cliente):
+
+    #Reagrupa os fragmentos recebidos, verifica a integridade dos dados pelo checksum (CRC32)
+    #e processa a mensagem quando todos os fragmentos forem recebidos.
+    
+    global contador_fragmentos, lista_fragmentos
+    cabecalho = dados_recebidos[:16]  # Primeiro bloco contém metadados
+    corpo_mensagem = dados_recebidos[16:]
+    tamanho, indice, total, checksum = struct.unpack('!IIII', cabecalho)
+   
+    # Validação do checksum para garantir a integridade dos dados
+    if checksum != crc32(corpo_mensagem):
+        print("Fragmento corrompido (CRC inválido), ignorando...")
         return
-    if len(frags_received_list) < frags_numb:
-        add = frags_numb - len(frags_received_list)
-        frags_received_list.extend([None] * add)
-    frags_received_list[frag_index] = message_in_bytes
-    frags_received_count += 1
-    if frags_received_count == frags_numb:
-        with open('received_message.txt', 'wb') as file:
-            for fragment in frags_received_list:
-                file.write(fragment)
-        frags_received_count = 0
-        frags_received_list = []
-        process_received_message(addr)  # Processa a mensagem recebida
-    elif (frags_received_count < frags_numb) and (frag_index == frags_numb - 1):
-        print("Provavelmente houve perda de pacotes")
-        frags_received_count = 0
-        frags_received_list = []
+   
+    # Ajusta a lista de fragmentos se necessário
+    if len(lista_fragmentos) < total:
+        lista_fragmentos.extend([None] * (total - len(lista_fragmentos)))
+   
+    lista_fragmentos[indice] = corpo_mensagem
+    contador_fragmentos += 1
+   
+    # Se todos os fragmentos foram recebidos, reconstroi a mensagem
+    if contador_fragmentos == total:
+        with open('mensagem_recebida.txt', 'wb') as arquivo:
+            for fragmento in lista_fragmentos:
+                arquivo.write(fragmento)
+       
+        contador_fragmentos = 0
+        lista_fragmentos = []
+        processar_mensagem(endereco_cliente)
+    elif (contador_fragmentos < total) and (indice == total - 1):
+        print("Possível perda de pacotes detectada!")
+        contador_fragmentos = 0
+        lista_fragmentos = []
 
-# Processa a mensagem e a trata caso seja uma confirmação de Login, Log out ou apenas uma mensagem qualquer.
-def process_received_message(addr):
-    with open('received_message.txt', 'r') as file:
-        file_content = file.read()
-    os.remove('received_message.txt')
-    for line in file_content.strip().split('\n'):
-        line = line.strip()
-        if "SIGNUP_TAG:" in line:
-            name = line.split(":")[1]
-            sent_msg = f"{name} entrou na sala"
-            print(f"{addr} entrou na sala")
-            messages.put(sent_msg)
-        elif "SIGNOUT_TAG:" in line:
-            name = line.split(":")[1]
-            sent_msg = f"{name} saiu da sala"
-            print(f"{addr} saiu da sala")
-            clients.remove(addr)  # Remove o cliente da lista de clientes
-            print(f"Nova lista de Clientes: {clients}")
-            messages.put(sent_msg)
+# Processa a mensagem recebida, identificando login, logout ou mensagens comuns
+def processar_mensagem(endereco_cliente):
+
+    # le a mensagem reconstruída, identifica se é login/logout ou uma mensagem normal,
+    #e envia para os demais usuários conectados.
+    
+    with open('mensagem_recebida.txt', 'r') as arquivo:
+        conteudo = arquivo.read()
+    os.remove('mensagem_recebida.txt')
+   
+    for linha in conteudo.strip().split('\n'):
+        linha = linha.strip()
+        if "LOGIN:" in linha:
+            nome_usuario = linha.split(":")[1]
+            mensagem = f"{nome_usuario} entrou no chat"
+            print(f"{endereco_cliente} conectado como {nome_usuario}")
+            fila_mensagens.put(mensagem)
+        elif "LOGOUT:" in linha:
+            nome_usuario = linha.split(":")[1]
+            mensagem = f"{nome_usuario} saiu do chat"
+            print(f"{endereco_cliente} desconectado ({nome_usuario})")
+            usuarios_conectados.remove(endereco_cliente)
+            print(f"Usuários ativos: {usuarios_conectados}")
+            fila_mensagens.put(mensagem)
         else:
-            messages.put(line)
-            print(f"Mensagem recebida de {addr} processada.")
-    send_to_all_clients(addr)
+            fila_mensagens.put(linha)
+            print(f"Mensagem recebida de {endereco_cliente}: {linha}")
+   
+    enviar_para_todos(endereco_cliente)
 
-# Faz o broadcast da mensagem para os clientes
-def send_to_all_clients(sender_addr):
-    frag_index = 0
-    frag_size = 1008
-    while not messages.empty():
-        message = messages.get()
-        with open('message_server.txt', 'w') as file:
-            file.write(message)
-        with open('message_server.txt', 'rb') as file:
-            payload = file.read()
-            frags_numb = math.ceil(len(payload) / frag_size)
-            for client in clients:
-                if client != sender_addr:  # Evitar enviar para o remetente original
-                    fragment_payload = payload
-                    fragment_index = 0
-                    while fragment_payload:
-                        fragment = create_fragment(fragment_payload, frag_size, fragment_index, frags_numb)
-                        server.sendto(fragment, client)
-                        fragment_payload = fragment_payload[frag_size:]
-                        fragment_index += 1
-                    print(f"Mensagem enviada para {client}\n") 
-        os.remove('message_server.txt')
+# envia mensagens para todos os usuários conectados
+def enviar_para_todos(remetente):
+    
+    #Recupera mensagens da fila e as envia fragmentadas para todos os clientes conectados,
+    #exceto o remetente original.
+    
+    tamanho_fragmento = 1008
+    while not fila_mensagens.empty():
+        mensagem = fila_mensagens.get()
+       
+        with open('mensagem_servidor.txt', 'w') as arquivo:
+            arquivo.write(mensagem)
+       
+        with open('mensagem_servidor.txt', 'rb') as arquivo:
+            dados = arquivo.read()
+            total_fragmentos = math.ceil(len(dados) / tamanho_fragmento)
+           
+            for cliente in usuarios_conectados:
+                if cliente != remetente:
+                    dados_restantes = dados
+                    indice_fragmento = 0
+                    while dados_restantes:
+                        fragmento = gerar_fragmento(dados_restantes, tamanho_fragmento, indice_fragmento, total_fragmentos)
+                        servidor.sendto(fragmento, cliente)
+                        dados_restantes = dados_restantes[tamanho_fragmento:]
+                        indice_fragmento += 1
+                    print(f"Mensagem enviada para {cliente}")
+       
+        os.remove('mensagem_servidor.txt')
 
-# Função de receber dados
-def receive():
+# Thread que fica em espera para receber dados de clientes
+def escutar():
+    
+    #Loop principal do servidor que recebe mensagens e gerencia conexões dos clientes.
+    
     while True:
-        data, addr = server.recvfrom(1024)
-        print("Mensagem recebida")
-        if addr not in clients:
-            clients.append(addr)
-            print(f"Lista de Clientes: {clients}")
-        unpack_and_reassemble(data, addr)
+        dados, endereco = servidor.recvfrom(1024)
+        print("Novo pacote recebido")
+        if endereco not in usuarios_conectados:
+            usuarios_conectados.append(endereco)
+            print(f"Usuários conectados: {usuarios_conectados}")
+       
+        reconstruir_mensagem(dados, endereco)
 
-# Inicia o thread para receber dados
-thread = threading.Thread(target=receive)
-thread.start()
+# Inicia a thread para receber mensagens dos clientes
+thread_recebimento = threading.Thread(target=escutar)
+thread_recebimento.start()

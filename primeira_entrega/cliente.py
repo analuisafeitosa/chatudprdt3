@@ -1,119 +1,124 @@
-import random
 import socket
 import threading
-import math
-from datetime import datetime
-import os
-from zlib import crc32
 import struct
+import os
+import math
+import random
+from zlib import crc32
+from datetime import datetime
 
 # Configuração do Cliente
-client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-client.bind(("localhost", random.randint(8000, 9000)))
+cliente = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+cliente.bind(("localhost", random.randint(8000, 9000)))  # Porta aleatória para o cliente
 
-# Armazenamento de fragmentos recebidos
-frags_received_list = []
-frags_received_count = 0
+# Lista para armazenar fragmentos recebidos
+lista_fragmentos = []
+contador_fragmentos = 0
 
-# Função que cria fragmentos
-def create_fragment(payload, frag_size, frag_index, frags_numb):
-    data = payload[:frag_size]
-    crc = crc32(data)
-    header = struct.pack('!IIII', frag_size, frag_index, frags_numb, crc)
-    return header + data
+# Função para criar fragmentos
+def gerar_fragmento(dados, tamanho_fragmento, indice_fragmento, total_fragmentos):
+    
+    #Divide a mensagem em fragmentos e adiciona um cabeçalho com informações para reagrupamento.
+    
+    parte_dados = dados[:tamanho_fragmento]
+    checksum = crc32(parte_dados)
+    cabecalho = struct.pack('!IIII', tamanho_fragmento, indice_fragmento, total_fragmentos, checksum)
+    return cabecalho + parte_dados
 
-# Verificação da Integridade dos dados recebidos por meio de desempacotamento e reagrupamento
-def unpack_and_reassemble(data):
-    global frags_received_count, frags_received_list
-    header = data[:16]
-    message_in_bytes = data[16:]
-    frag_size, frag_index, frags_numb, crc = struct.unpack('!IIII', header)
-    # Verificar CRC
-    if crc != crc32(message_in_bytes):
-        print("Fragmento com CRC inválido, ignorando.")
+# Função para reconstruir a mensagem original
+def reconstruir_mensagem(dados_recebidos):
+    
+    #Junta os fragmentos recebidos e verifica a integridade pelo checksum (CRC32).
+    
+    global contador_fragmentos, lista_fragmentos
+    cabecalho = dados_recebidos[:16]
+    corpo_mensagem = dados_recebidos[16:]
+    tamanho, indice, total, checksum = struct.unpack('!IIII', cabecalho)
+   
+    if checksum != crc32(corpo_mensagem):
+        print("Fragmento corrompido, ignorando...")
         return
-    if len(frags_received_list) < frags_numb:
-        add = frags_numb - len(frags_received_list)
-        frags_received_list.extend([None] * add)
-    frags_received_list[frag_index] = message_in_bytes
-    frags_received_count += 1
-    if frags_received_count == frags_numb:
-        with open('received_message.txt', 'wb') as file:
-            for fragment in frags_received_list:
-                file.write(fragment)
-        frags_received_count = 0
-        frags_received_list = []
-        print_received_message()  # Exibe a mensagem recebida
-    elif (frags_received_count < frags_numb) and (frag_index == frags_numb - 1):
-        print("Provavelmente houve perda de pacotes")
-        frags_received_count = 0
-        frags_received_list = []
+   
+    if len(lista_fragmentos) < total:
+        lista_fragmentos.extend([None] * (total - len(lista_fragmentos)))
+   
+    lista_fragmentos[indice] = corpo_mensagem
+    contador_fragmentos += 1
+   
+    if contador_fragmentos == total:
+        with open('mensagem_recebida.txt', 'wb') as arquivo:
+            for fragmento in lista_fragmentos:
+                arquivo.write(fragmento)
+        contador_fragmentos = 0
+        lista_fragmentos = []
+        exibir_mensagem_recebida()
+    elif (contador_fragmentos < total) and (indice == total - 1):
+        print("Possível perda de pacotes!")
+        contador_fragmentos = 0
+        lista_fragmentos = []
 
-# Lê e exibe a mensagem recebida
-def print_received_message():
-    with open('received_message.txt', 'r') as file:
-        file_content = file.read()
-    os.remove('received_message.txt')
-    print(file_content)
+# Exibe a mensagem recebida
+def exibir_mensagem_recebida():
+    with open('mensagem_recebida.txt', 'r') as arquivo:
+        conteudo = arquivo.read()
+    os.remove('mensagem_recebida.txt')
+    print(conteudo)
 
-# Função que trata o recebimento da mensagem
-def receive():
+# Thread para receber mensagens
+def receber():
     while True:
-        data, addr = client.recvfrom(1024)
+        dados, _ = cliente.recvfrom(1024)
         print("Mensagem recebida")
-        unpack_and_reassemble(data)  # Chama a função para desempacotar e reconstituir a mensagem
+        reconstruir_mensagem(dados)
 
 # Envia uma mensagem fragmentada
-def send_txt():
-    frag_index = 0
-    frag_size = 1008
-    with open('message_client.txt', 'rb') as file:
-        payload = file.read()
-        frags_numb = math.ceil(len(payload) / frag_size)  # Calcula o número de fragmentos
-        while payload:
-            fragment = create_fragment(payload, frag_size, frag_index, frags_numb)
-            client.sendto(fragment, ('localhost', 7777))  # Envia o fragmento para o servidor
-            payload = payload[frag_size:]
-            frag_index += 1
-    os.remove('message_client.txt')
+def enviar_mensagem():
+    tamanho_fragmento = 1008
+    with open('mensagem_cliente.txt', 'rb') as arquivo:
+        dados = arquivo.read()
+        total_fragmentos = math.ceil(len(dados) / tamanho_fragmento)
+       
+        indice_fragmento = 0
+        while dados:
+            fragmento = gerar_fragmento(dados, tamanho_fragmento, indice_fragmento, total_fragmentos)
+            cliente.sendto(fragmento, ('localhost', 7777))
+            dados = dados[tamanho_fragmento:]
+            indice_fragmento += 1
+   
+    os.remove('mensagem_cliente.txt')
 
-# Função principal para enviar mensagens e tratar login/logout
-def main():
-    username = ''
+# Função principal de envio
+def iniciar_cliente():
+    usuario = ""
     while True:
-        message = input("Digite sua mensagem: ")
-        # Tratamento de login do usuário
-        if message.startswith("hi, meu nome eh") or message.startswith("Hi, meu nome eh"):
-            username = message[len("hi, meu nome eh") + 1:].strip()
-            sent_msg = f"SIGNUP_TAG:{username}"
-            with open('message_client.txt', 'w') as file:
-                file.write(sent_msg)
-            send_txt()
-            print(f"Usuário {username}, você está conectado.")
-
-        # Tratamento de logout do usuário
-        elif username and message == "bye":
-            sent_msg = f"SIGNOUT_TAG:{username}"
-            with open('message_client.txt', 'w') as file:
-                file.write(sent_msg)
-            send_txt()
-            print("Conexão encerrada. Até logo!")
-            exit()  # Encerra o cliente
-
-        # Tratamento de mensagem do usuário
+        mensagem = input("Digite sua mensagem: ")
+       
+        if mensagem.lower().startswith("oi, meu nome eh"):
+            usuario = mensagem[15:].strip()
+            with open('mensagem_cliente.txt', 'w') as arquivo:
+                arquivo.write(f"LOGIN:{usuario}")
+            enviar_mensagem()
+            print(f"Bem-vindo, {usuario}! Você está conectado.")
+        elif usuario and mensagem.lower() == "tchau":
+            with open('mensagem_cliente.txt', 'w') as arquivo:
+                arquivo.write(f"LOGOUT:{usuario}")
+            enviar_mensagem()
+            print("Você saiu do chat. Até logo!")
+            exit()
         else:
-            if username:
+            if usuario:
                 timestamp = datetime.now().strftime('%H:%M:%S - %d/%m/%Y')
-                formatted_message = f"{client.getsockname()[0]}:{client.getsockname()[1]}/~{username}: {message} {timestamp}"
-                with open('message_client.txt', 'w') as file:
-                    file.write(formatted_message)
-                send_txt()
+                mensagem_formatada = f"{cliente.getsockname()[0]}:{cliente.getsockname()[1]}/~{usuario}: {mensagem} {timestamp}"
+                with open('mensagem_cliente.txt', 'w') as arquivo:
+                    arquivo.write(mensagem_formatada)
+                enviar_mensagem()
             else:
-                print("Mensagem não enviada, você deve se conectar primeiro. Para conectar, digite 'hi, meu nome eh' e forneça seu nome de usuário.")
+                print("Você precisa se conectar primeiro digitando 'Oi, meu nome eh' seguido do seu nome.")
 
-# Inicia o thread de recebimento
-thread1 = threading.Thread(target=receive)
-thread1.start()
+# Inicia a thread para receber mensagens
+thread_recebimento = threading.Thread(target=receber)
+thread_recebimento.start()
 
 # Inicia a função principal
-main()
+tentar_conectar = threading.Thread(target=iniciar_cliente)
+tentar_conectar.start()
