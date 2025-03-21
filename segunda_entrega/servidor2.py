@@ -13,8 +13,8 @@ server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 server.bind(('localhost', 7777))
 
 # Armazenamento de fragmentos recebidos
-frags_received_list = []
-frags_received_count = 0
+lista_fragmentos = []
+contador_fragmentos = 0
 
 # Variável relacionada ao RDT 3.0
 timeout = 2  # Timeout de 2 segundos
@@ -34,14 +34,14 @@ def gerar_fragmento(dados, tamanho_fragmento, indice_fragmento, total_fragmentos
     return header + data
 
 # Função para enviar ACK
-def send_ack(addr):
+def envia_ack(addr):
     ack_packet = struct.pack('!I', 1)
     server.sendto(ack_packet, addr)
     print(f'ACK enviado com sucesso para {addr}')
 
 # Verificação da integridade dos dados recebidos por meio de desempacotamento e reagrupação
 def reconstruir_mensagem(data, addr):
-    global frags_received_count, frags_received_list
+    global contador_fragmentos, lista_fragmentos
 
     header = data[:16]
     message_in_bytes = data[16:]
@@ -53,28 +53,28 @@ def reconstruir_mensagem(data, addr):
         print(f"Fragmento com checksum inválido, ignorando.\nEsperado: {checksum},\nCalculado: {checksum_calculado}")
         return
 
-    if len(frags_received_list) < total_fragmentos:
-        add = total_fragmentos - len(frags_received_list)
-        frags_received_list.extend([None] * add)
-    frags_received_list[indice_fragmento] = message_in_bytes
-    frags_received_count += 1
-    if frags_received_count == total_fragmentos:
+    if len(lista_fragmentos) < total_fragmentos:
+        add = total_fragmentos - len(lista_fragmentos)
+        lista_fragmentos.extend([None] * add)
+    lista_fragmentos[indice_fragmento] = message_in_bytes
+    contador_fragmentos += 1
+    if contador_fragmentos == total_fragmentos:
         with open('received_message.txt', 'wb') as file:
-            for fragment in frags_received_list:
+            for fragment in lista_fragmentos:
                 file.write(fragment)
-        frags_received_count = 0
-        frags_received_list = []
-        process_received_message(addr)
-    elif (frags_received_count < total_fragmentos) and (indice_fragmento == total_fragmentos - 1):
-        print("Provavelmente houve perda de pacotes")
-        frags_received_count = 0
-        frags_received_list = []
+        contador_fragmentos = 0
+        lista_fragmentos = []
+        processar_mensagem_recebida(addr)
+    elif (contador_fragmentos < total_fragmentos) and (indice_fragmento == total_fragmentos - 1):
+        print("Possível perda de pacotes detectada!")
+        contador_fragmentos = 0
+        lista_fragmentos = []
 
     # Envia ACK após receber o fragmento
-    send_ack(addr)
+    envia_ack(addr)
 
 # Processa a mensagem e a trata caso seja uma confirmação de Login, Log out ou apenas uma mensagem qualquer.
-def process_received_message(addr):
+def processar_mensagem_recebida(addr):
     with open('received_message.txt', 'r') as file:
         file_content = file.read()
     os.remove('received_message.txt')
@@ -93,10 +93,10 @@ def process_received_message(addr):
         else:
             messages.put(line)
             print(f"Mensagem recebida de {addr} processada.")
-    send_to_all_clients(addr)
+    enviar_para_todos(addr)
 
 # Faz o broadcast da mensagem para os clientes
-def send_to_all_clients(sender_addr):
+def enviar_para_todos(sender_addr):
     tamanho_fragmento = 1008
     while not messages.empty():
         message = messages.get()
@@ -111,13 +111,13 @@ def send_to_all_clients(sender_addr):
                     fragment_index = 0
                     while fragment_dados:
                         fragment = gerar_fragmento(fragment_dados, tamanho_fragmento, fragment_index, total_fragmentos)
-                        send_fragment(fragment, client)
+                        envia_fragmento(fragment, client)
                         fragment_dados = fragment_dados[tamanho_fragmento:]
                         fragment_index += 1
                     #print(f"Mensagem enviada para {client}\n")
         os.remove('message_server.txt')
 
-def send_fragment(fragment, addr):
+def envia_fragmento(fragment, addr):
     ack_event = threading.Event()
     ack_received = False
     print(f"\nMensagem enviada para {addr}\n")

@@ -63,7 +63,7 @@ def reconstruir_mensagem(data):
         lista_fragmentos = []
         exibir_mensagem_recebida()
     elif (contador_fragmentos < total_fragmentos) and (indice_fragmento == total_fragmentos - 1):
-        print("Provavelmente houve perda de pacotes")
+        print("Possível perda de pacotes detectada!")
         contador_fragmentos = 0
         lista_fragmentos = []
 
