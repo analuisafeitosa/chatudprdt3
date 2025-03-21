@@ -1,152 +1,164 @@
-import socket
+import random
 import threading
-from threading import *
-from pathlib import *
+import socket
+import struct
 import time
+import os
+import math
+from datetime import datetime
+
+# Configuração do Cliente 
+client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+client.bind(("localhost", random.randint(8000, 9000)))
+
+# Armazenamento de fragmentos recebidos
+frags_received_list = []
+frags_received_count = 0
+
+# Variáveis relacionadas ao RDT 3.0
+timeout = 2  # Timeout de 2 segundos
+ack_received_flag = False
+lock = threading.Lock()
+
+# Função que faz o cálculo do Checksum
+def calcula_checksum(data):
+    checksum = 0
+    for byte in data:
+        checksum = (checksum + byte) & 0xFF
+    return checksum
+
+# Função para verificar se recebeu ACK
+def ack_received():
+    global ack_received_flag
+    ack_received_flag = True
+
+# Verificação da integridade dos dados recebidos por meio de desempacotamento e reagrupação
+def unpack_and_reassemble(data):
+    global frags_received_count, frags_received_list
+
+    header = data[:16]
+    message_in_bytes = data[16:]
+    tamanho_fragmento, indice_fragmento, total_fragmentos, checksum = struct.unpack('!IIII', header)
+
+    # Verifica Checksum
+    if checksum != calcula_checksum(message_in_bytes):
+        print("fragmento com checksum inválido, ignorando.")
+        return
+
+    if len(frags_received_list) < total_fragmentos:
+        add = total_fragmentos - len(frags_received_list)
+        frags_received_list.extend([None] * add)
+    frags_received_list[indice_fragmento] = message_in_bytes  # Armazena o fragmento na lista na posição correta
+    frags_received_count += 1
+
+    # Envia ACK após receber o fragmento
+    send_ack()
+
+    # Verifica se todos os fragmentos foram recebidos e reseta a lista para o próximo pacote ou se houve perda de pacote
+    if frags_received_count == total_fragmentos:
+        with open('received_message.txt', 'wb') as file:
+            for fragmento in frags_received_list:
+                file.write(fragmento)
+        frags_received_count = 0
+        frags_received_list = []
+        print_received_message()
+    elif (frags_received_count < total_fragmentos) and (indice_fragmento == total_fragmentos - 1):
+        print("Provavelmente houve perda de pacotes")
+        frags_received_count = 0
+        frags_received_list = []
+
+# Lê o arquivo txt e printa a mensagem
+def print_received_message():
+    with open('received_message.txt', 'r') as file:
+        file_content = file.read()
+    print(file_content)
+
+# Função para enviar ACK
+def send_ack():
+    ack_packet = struct.pack('!I', 1)
+    client.sendto(ack_packet, ('localhost', 7777))
 
 
+# Função que trata o recebimento da mensagem
+def receive():
+    global ack_received_flag
+    while True:
+        data, addr = client.recvfrom(1024)
+        header = data[:16]
+        message_type = struct.unpack('!I', header[:4])[0]
 
-class Client:
-    def __init__(self, servidor):
-        self.cliente = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.cliente.connect(servidor)
-        self.nome = None
-        self.flags = ["SYN".encode(), "ACK".encode()] #Flags que vamos usar pra o ordenamento
-        self.servidor = servidor
-        self.acknowlodge_number = None
-        self.rcv_ack = threading.Event() #Detecta o recebimento de ack, o próprio algoritmo aponta se houver e seta
-        connection_thread = Thread(target=self.conexao)
-        connection_thread.start()
-        connection_thread.join() #Prioriza o handshake, só podendo executar as próximas funções com a conexão estabelecida
-        receiveClient_thread = Thread(target=self.receber)
-        receiveClient_thread.start()
-
-
-    def conexao(self): #Three Way Handshake
-        time.sleep(0.01)
-        self.cliente.sendto(self.flags[0], self.servidor) #Envio de SYN
-        print("Solicitada conexão")
-        time.sleep(0.01)
-        flag_synack, _ = self.cliente.recvfrom(1024) #Espera-se receber SYN-ACK
-        if flag_synack.decode() == "SYN ACK":
-            print("Conexão aceita")
-            time.sleep(0.01)
-            self.cliente.sendto(self.flags[1], self.servidor) #Envia ACK
-            time.sleep(0.01)
-            print("Conexão estabelecida com sucesso")
-
-    def checksum(self, mensagem):
-        tamanho = len(mensagem)
-        if tamanho & 1:
-            tamanho -= 1
-            soma = ord(mensagem[tamanho])
+        # Se a mensagem recebida for um ACK, altera a flag de ACK para True
+        if message_type == 1:  # ACK
+            ack_received_flag = True
+        # Se a mensagem recebida NÃO for um ACK: Trata a mensagem
         else:
-            soma = 0
-        while tamanho>0:
-            tamanho-=2
-            soma+= (ord(mensagem[tamanho+1])<<8)+ ord(mensagem[tamanho])
-        soma = (soma>>16) + (soma & 0xffff)
-        soma += (soma>>16)
-        resultado = (~soma) & 0xffff
-        resultado = resultado>>8 | ((resultado&0xff)<<8)
-        return chr(resultado//256)+chr(resultado%256)
+            unpack_and_reassemble(data)
 
-    def receber(self):
-        mensagem_rc = ""
-        while 1:
-            try:
-                mensagem_pt, addr_remetente = self.cliente.recvfrom(1024) #Aguarda o recebimento de pacotes, recebendo coleta endereço do remetente e payload
-                mensagem_pt = mensagem_pt.decode("utf-8") #Deixo em str
-                if mensagem_pt == "ACK 0" or mensagem_pt=="ACK 1": #Gravando número de sequência
-                    self.acknowlodge_number = int(mensagem_pt[-1:])
-                    self.rcv_ack.set() #Aponta que foi recebido o ACK
-                elif mensagem_pt != "ACK 0" and mensagem_pt != "ACK 1": #Se não for flag
-                    checksum = mensagem_pt[:2] #Formatação
-                    numero_seq = mensagem_pt[2]
-                    pacote = mensagem_pt[3:]
-                    resultado_checksum = self.checksum(pacote) #Calculo do checksum para comparar com o que se espera
-                    if checksum == resultado_checksum:
-                        if pacote != "\\END":  # Se for a flag de fim a mensagem está completa, trata-se do último fragmento (ou único), caso não é concatenado
-                            mensagem_rc += pacote
-                            print(f"\nIntegridade validada. Enviando ACK {numero_seq}")
-                            self.cliente.sendto(f"ACK {str(numero_seq)}".encode(), self.servidor)
-                        else:
-                            print(mensagem_rc)
-                            if mensagem_rc != "VOCÊ ENTROU NA SALA" and mensagem_rc != "Você saiu da sala":
-                                print("Nome do arquivo .txt: ")
-                            mensagem_rc = "" #Reset para próxima solicitação
-                            self.cliente.sendto(f"ACK {str(numero_seq)}".encode(), self.servidor)
-                    elif not checksum == resultado_checksum:
-                        self.cliente.sendto(f"ACK {str(1-int(numero_seq))}".encode(), self.servidor)
-                        if mensagem_pt != "SYN ACK":
-                            print("Erro de integridade")
-            except:
-                pass
-    def enviar(self, n_seq, mensagem):
-        ack = False
-        while not ack:
-            checksum = self.checksum(mensagem).encode() #Estabelece o checksum da mensagem
-            numero_seq = str(n_seq).encode() #Coleta e estabelece o número de seq
-            pacote = (checksum + numero_seq + mensagem.encode()) #Formato da mensagem, do chunk
-            self.cliente.sendto(pacote, self.servidor) #Envia o pacote
-            if self.rcv_ack.wait(3): #Timeout de três segundos para receber um ACK
-                time.sleep(0.1)
-                if self.acknowlodge_number == n_seq: #Recebido ACK e foi o esperado
-                    ack = True
-                    print("Mensagem recebida com sucesso")
-                else: #Recebido, mas não foi o esperado, não é setado como true e ocorre assim retransmissão
-                    print("Houve algum erro na entrega, tentando novamente...")
-            else: #Timeout estourado
-                print("Tempo esgotado, tentando estabelecer... Reenviando...")
-                pass
+thread1 = threading.Thread(target=receive)
+thread1.start()
 
-cl = None
-conexao = int(input("Digite a porta do servidor que deseja se conectar:\n"))
-host = socket.gethostbyname(socket.gethostname())
-try:
-    cl = Client((host, conexao))
-except:
-    print("Erro: Servidor não responde ou não existe.")
+# Cria um fragmento
+def gerar_fragmento(dados, tamanho_fragmento, indice_fragmento, total_fragmentos):
+    data = dados[:tamanho_fragmento]
+    checksum = calcula_checksum(data)
+    header = struct.pack('!IIII', tamanho_fragmento, indice_fragmento, total_fragmentos, checksum)
+    return header + data
 
-n_seq, verificacao = 0, False
+def send_fragmento(fragmento, addr):
+    global ack_received_flag
+    ack_received_flag = False
+    # Loop de ACK
+    while not ack_received_flag:  # Enquanto a função "ACK Received" não transformar a flag em True, reenvia a mensagem
+        client.sendto(fragmento, addr)
+        start = time.time()
+        while time.time() - start < timeout:
+            if ack_received_flag:
+                break
 
-while not verificacao:
-    solicitacao = "hi, meu nome eh:"+ input("Seu nome:")
-    if solicitacao.startswith("hi, meu nome eh:"): #Se enviou o comando para inserir nome e realmente ainda não estiver conectado
-        if not cl.nome:
-            cl.nome = solicitacao[len("hi, meu nome eh:"):]
-            cl.enviar(n_seq, solicitacao)
-            n_seq = 1 - n_seq
-            verificacao = True
-        elif cl.nome:
-            print("Já conectado!")
-    else:
-        print("Para se conectar, insira seu nome")
+def main():
+    username = ''
+    # Loop principal
+    while True:
+        message = input("")
+        # Trata o login ideal do usuário
+        if message.startswith("oi, meu nome eh") or message.startswith("Oi, meu nome eh"):
+            username = message[len("oi, meu nome eh") + 1:].strip()
+            sent_msg = f"SIGNUP_TAG:{username}"
+            with open('message_client.txt', 'w') as file:
+                file.write(sent_msg)
+            send_txt()
+            print(f"Usuário {username}, você está conectado.")
+        # Trata a saída do usuário
+        elif username and message == "tchau":
+            sent_msg = f"SIGNOUT_TAG:{username}"
+            with open('message_client.txt', 'w') as file:
+                file.write(sent_msg)
+            send_txt()
+            print("Você saiu do chat. Até logo!")
+            exit()  # Encerra a conexão
+        # Trata a mensagem do usuário
+        else:
+            if username:
+                timestamp = datetime.now().strftime('%H:%M:%S - %d/%m/%Y')
+                formatted_message = f"{client.getsockname()[0]}:{client.getsockname()[1]}/~{username}: {message} {timestamp}"
+                with open('message_client.txt', 'w') as file:
+                    file.write(formatted_message)
+                send_txt()
+            else:
+                print("Você precisa se conectar primeiro digitando 'Oi, meu nome eh' seguido do seu nome.")
 
-while 1:
-    time.sleep(0.1)
-    print("\nEnvie o caminho de um arquivo .txt")
-    solicitacao = input("Nome do arquivo .txt:")
-    if solicitacao=="bye" and cl.nome: #Se conectado e solicitar desligamento, basta alertar o servidor e depois liberar o socket
-        cl.enviar(n_seq, solicitacao)
-        n_seq = 1 - n_seq
-        time.sleep(0.1)
-        cl.cliente.close()
-        cl.nome = None
-        exit()
-    elif cl.nome and solicitacao!="bye":
-        nome_arquivo = Path(solicitacao)
-        if nome_arquivo.is_file() and nome_arquivo.suffix.lower()==".txt": #Verificando se há um arquivo com o path solicitado e se seu sufixo (extensão) é txt
-            with open(nome_arquivo, 'rb') as arquivo: #Abre o arquivo e lhe declara um nome no contexto
-                data = arquivo.read(1024) #Lê os primeiros 1024 bytes
-                while data: #Enquanto for possivel, envia os dados
-                    cl.enviar(n_seq, data.decode())
-                    n_seq = 1 - n_seq
-                    data = arquivo.read(1024) #E lê os próximos pacotes de até 1024
-            cl.enviar(n_seq, "\\END") #Envia flag de fim
-            n_seq = 1 - n_seq
-        elif not nome_arquivo.is_file() or not nome_arquivo.suffix.lower()==".txt":
-            print("Erro: Envie o caminho de um arquivo existente no formato .txt em sua máquina")
-            time.sleep(0.01)
-            print("Se estiver na pasta atual basta digitar seu nome e a extensão .txt")
-    time.sleep(1)
+# Função que manda a mensagem
+def send_txt():
+    indice_fragmento = 0
+    tamanho_fragmento = 1008
+    with open('message_client.txt', 'rb') as file:
+        dados = file.read()
+        total_fragmentos = math.ceil(len(dados) / tamanho_fragmento)  # Calcula o número de fragmentos
+        while dados:
+            fragmento = gerar_fragmento(dados, tamanho_fragmento, indice_fragmento, total_fragmentos)
+            send_fragmento(fragmento, ('localhost', 7777))
+            dados = dados[tamanho_fragmento:]
+            indice_fragmento += 1
+    os.remove('message_client.txt')
+
+main()
