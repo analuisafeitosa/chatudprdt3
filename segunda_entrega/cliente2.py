@@ -126,14 +126,14 @@ def main():
             sent_msg = f"SIGNUP_TAG:{username}"
             with open('message_client.txt', 'w') as file:
                 file.write(sent_msg)
-            send_txt()
+            enviar_txt()
             print(f"Usuário {username}, você está conectado.")
         # Trata a saída do usuário
         elif username and message == "tchau":
             sent_msg = f"SIGNOUT_TAG:{username}"
             with open('message_client.txt', 'w') as file:
                 file.write(sent_msg)
-            send_txt()
+            enviar_txt()
             print("Você saiu do chat. Até logo!")
             exit()  # Encerra a conexão
         # Trata a mensagem do usuário
@@ -143,12 +143,12 @@ def main():
                 formatted_message = f"{client.getsockname()[0]}:{client.getsockname()[1]}/~{username}: {message} {timestamp}"
                 with open('message_client.txt', 'w') as file:
                     file.write(formatted_message)
-                send_txt()
+                enviar_txt()
             else:
                 print("Você precisa se conectar primeiro digitando 'Oi, meu nome eh' seguido do seu nome.")
 
 # Função que manda a mensagem
-def send_txt():
+def enviar_txt():
     indice_fragmento = 0
     tamanho_fragmento = 1008
     with open('message_client.txt', 'rb') as file:
