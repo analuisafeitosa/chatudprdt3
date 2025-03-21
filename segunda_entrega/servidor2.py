@@ -95,27 +95,6 @@ def processar_mensagem_recebida(addr):
             print(f"Mensagem recebida de {addr} processada.")
     enviar_para_todos(addr)
 
-# Faz o broadcast da mensagem para os clientes
-def enviar_para_todos(sender_addr):
-    tamanho_fragmento = 1008
-    while not messages.empty():
-        message = messages.get()
-        with open('message_server.txt', 'w') as file:
-            file.write(message)
-        with open('message_server.txt', 'rb') as file:
-            dados = file.read()
-            total_fragmentos = math.ceil(len(dados) / tamanho_fragmento)
-            for client in clients:
-                if client != sender_addr:  # Evitar enviar para o remetente original
-                    fragment_dados = dados
-                    fragment_index = 0
-                    while fragment_dados:
-                        fragment = gerar_fragmento(fragment_dados, tamanho_fragmento, fragment_index, total_fragmentos)
-                        envia_fragmento(fragment, client)
-                        fragment_dados = fragment_dados[tamanho_fragmento:]
-                        fragment_index += 1
-                    #print(f"Mensagem enviada para {client}\n")
-        os.remove('message_server.txt')
 
 def envia_fragmento(fragment, addr):
     ack_event = threading.Event()
@@ -147,6 +126,30 @@ def envia_fragmento(fragment, addr):
 
     ack_thread.join()  # Garante que a thread de ACK finalize
     server.settimeout(None)  # Remove o timeout
+
+# Faz o broadcast da mensagem para os clientes
+def enviar_para_todos(sender_addr):
+
+    tamanho_fragmento = 1008
+    
+    while not messages.empty():
+        message = messages.get()
+        with open('message_server.txt', 'w') as file:
+            file.write(message)
+        with open('message_server.txt', 'rb') as file:
+            dados = file.read()
+            total_fragmentos = math.ceil(len(dados) / tamanho_fragmento)
+            for client in clients:
+                if client != sender_addr:  # Evitar enviar para o remetente original
+                    fragment_dados = dados
+                    fragment_index = 0
+                    while fragment_dados:
+                        fragment = gerar_fragmento(fragment_dados, tamanho_fragmento, fragment_index, total_fragmentos)
+                        envia_fragmento(fragment, client)
+                        fragment_dados = fragment_dados[tamanho_fragmento:]
+                        fragment_index += 1
+                    #print(f"Mensagem enviada para {client}\n")
+        os.remove('message_server.txt')
 
 # Função de receber dados
 def receive():
