@@ -40,7 +40,7 @@ def send_ack(addr):
     print(f'ACK enviado com sucesso para {addr}')
 
 # Verificação da integridade dos dados recebidos por meio de desempacotamento e reagrupação
-def unpack_and_reassemble(data, addr):
+def reconstruir_mensagem(data, addr):
     global frags_received_count, frags_received_list
 
     header = data[:16]
@@ -164,7 +164,7 @@ def receive():
             continue
         # Se a mensagem recebida NÃO for um ACK: Trata a mensagem
         else:
-            unpack_and_reassemble(data, addr)
+            reconstruir_mensagem(data, addr)
 
 thread = threading.Thread(target=receive)
 thread.start()

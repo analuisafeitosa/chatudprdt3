@@ -11,13 +11,13 @@ from datetime import datetime
 client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 client.bind(("localhost", random.randint(8000, 9000)))
 
-# Armazenamento de fragmentos recebidos
-frags_received_list = []
-frags_received_count = 0
+# Lista para armazenar fragmentos recebidos
+lista_fragmentos = []
+contador_fragmentos = 0
 
 # Variáveis relacionadas ao RDT 3.0
 timeout = 2  # Timeout de 2 segundos
-ack_received_flag = False
+flag_recebimento_ack = False
 lock = threading.Lock()
 
 # Função que faz o cálculo do Checksum
@@ -28,13 +28,13 @@ def calcula_checksum(data):
     return checksum
 
 # Função para verificar se recebeu ACK
-def ack_received():
-    global ack_received_flag
-    ack_received_flag = True
+def ack_recebido():
+    global flag_recebimento_ack
+    flag_recebimento_ack = True
 
 # Verificação da integridade dos dados recebidos por meio de desempacotamento e reagrupação
-def unpack_and_reassemble(data):
-    global frags_received_count, frags_received_list
+def reconstruir_mensagem(data):
+    global contador_fragmentos, lista_fragmentos
 
     header = data[:16]
     message_in_bytes = data[16:]
@@ -45,43 +45,43 @@ def unpack_and_reassemble(data):
         print("fragmento com checksum inválido, ignorando.")
         return
 
-    if len(frags_received_list) < total_fragmentos:
-        add = total_fragmentos - len(frags_received_list)
-        frags_received_list.extend([None] * add)
-    frags_received_list[indice_fragmento] = message_in_bytes  # Armazena o fragmento na lista na posição correta
-    frags_received_count += 1
+    if len(lista_fragmentos) < total_fragmentos:
+        add = total_fragmentos - len(lista_fragmentos)
+        lista_fragmentos.extend([None] * add)
+    lista_fragmentos[indice_fragmento] = message_in_bytes  # Armazena o fragmento na lista na posição correta
+    contador_fragmentos += 1
 
     # Envia ACK após receber o fragmento
-    send_ack()
+    envia_ack()
 
     # Verifica se todos os fragmentos foram recebidos e reseta a lista para o próximo pacote ou se houve perda de pacote
-    if frags_received_count == total_fragmentos:
+    if contador_fragmentos == total_fragmentos:
         with open('received_message.txt', 'wb') as file:
-            for fragmento in frags_received_list:
+            for fragmento in lista_fragmentos:
                 file.write(fragmento)
-        frags_received_count = 0
-        frags_received_list = []
-        print_received_message()
-    elif (frags_received_count < total_fragmentos) and (indice_fragmento == total_fragmentos - 1):
+        contador_fragmentos = 0
+        lista_fragmentos = []
+        exibir_mensagem_recebida()
+    elif (contador_fragmentos < total_fragmentos) and (indice_fragmento == total_fragmentos - 1):
         print("Provavelmente houve perda de pacotes")
-        frags_received_count = 0
-        frags_received_list = []
+        contador_fragmentos = 0
+        lista_fragmentos = []
 
 # Lê o arquivo txt e printa a mensagem
-def print_received_message():
+def exibir_mensagem_recebida():
     with open('received_message.txt', 'r') as file:
         file_content = file.read()
     print(file_content)
 
 # Função para enviar ACK
-def send_ack():
+def envia_ack():
     ack_packet = struct.pack('!I', 1)
     client.sendto(ack_packet, ('localhost', 7777))
 
 
 # Função que trata o recebimento da mensagem
 def receive():
-    global ack_received_flag
+    global flag_recebimento_ack
     while True:
         data, addr = client.recvfrom(1024)
         header = data[:16]
@@ -89,10 +89,10 @@ def receive():
 
         # Se a mensagem recebida for um ACK, altera a flag de ACK para True
         if message_type == 1:  # ACK
-            ack_received_flag = True
+            flag_recebimento_ack = True
         # Se a mensagem recebida NÃO for um ACK: Trata a mensagem
         else:
-            unpack_and_reassemble(data)
+            reconstruir_mensagem(data)
 
 thread1 = threading.Thread(target=receive)
 thread1.start()
@@ -104,15 +104,15 @@ def gerar_fragmento(dados, tamanho_fragmento, indice_fragmento, total_fragmentos
     header = struct.pack('!IIII', tamanho_fragmento, indice_fragmento, total_fragmentos, checksum)
     return header + data
 
-def send_fragmento(fragmento, addr):
-    global ack_received_flag
-    ack_received_flag = False
+def envia_fragmento(fragmento, addr):
+    global flag_recebimento_ack
+    flag_recebimento_ack = False
     # Loop de ACK
-    while not ack_received_flag:  # Enquanto a função "ACK Received" não transformar a flag em True, reenvia a mensagem
+    while not flag_recebimento_ack:  # Enquanto a função "ACK Received" não transformar a flag em True, reenvia a mensagem
         client.sendto(fragmento, addr)
         start = time.time()
         while time.time() - start < timeout:
-            if ack_received_flag:
+            if flag_recebimento_ack:
                 break
 
 def main():
@@ -156,7 +156,7 @@ def send_txt():
         total_fragmentos = math.ceil(len(dados) / tamanho_fragmento)  # Calcula o número de fragmentos
         while dados:
             fragmento = gerar_fragmento(dados, tamanho_fragmento, indice_fragmento, total_fragmentos)
-            send_fragmento(fragmento, ('localhost', 7777))
+            envia_fragmento(fragmento, ('localhost', 7777))
             dados = dados[tamanho_fragmento:]
             indice_fragmento += 1
     os.remove('message_client.txt')
