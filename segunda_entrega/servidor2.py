@@ -131,7 +131,7 @@ def envia_fragmento(fragment, addr):
 def enviar_para_todos(sender_addr):
 
     tamanho_fragmento = 1008
-    
+
     while not messages.empty():
         message = messages.get()
         with open('message_server.txt', 'w') as file:
@@ -148,7 +148,6 @@ def enviar_para_todos(sender_addr):
                         envia_fragmento(fragment, client)
                         fragment_dados = fragment_dados[tamanho_fragmento:]
                         fragment_index += 1
-                    #print(f"Mensagem enviada para {client}\n")
         os.remove('message_server.txt')
 
 # Função de receber dados
