@@ -22,10 +22,36 @@ lock = threading.Lock()
 
 # Função que faz o cálculo do Checksum
 def calcula_checksum(data):
-    checksum = 0
-    for byte in data:
-        checksum = (checksum + byte) & 0xFF
-    return checksum
+    # Converte os dados de bytes para uma sequência binária de bits
+    bits = bin(int.from_bytes(data, byteorder='big'))[2:]
+
+    # Garante que o número de bits seja múltiplo de 8, preenchendo à esquerda com zeros
+    if len(bits) % 8 != 0:
+        bits = '0' * (8 - len(bits) % 8) + bits
+
+    slice_length = 8
+    # Divide a mensagem em blocos de 8 bits
+    blocos = [bits[i:i+slice_length] for i in range(0, len(bits), slice_length)]
+    
+    # Soma todos os blocos convertidos para inteiro
+    total = sum(int(b, 2) for b in blocos)
+    total_bin = bin(total)[2:]
+
+    # Tratamento de overflow (soma os bits excedentes)
+    if len(total_bin) > slice_length:
+        overflow = len(total_bin) - slice_length
+        total = int(total_bin[:overflow], 2) + int(total_bin[overflow:], 2)
+        total_bin = bin(total)[2:]
+
+    # Preenche com zeros à esquerda se necessário
+    total_bin = total_bin.zfill(slice_length)
+
+    # Calcula o complemento de 1 (inversão dos bits)
+    checksum = ''.join('0' if bit == '1' else '1' for bit in total_bin)
+
+    # Converte o checksum binário para inteiro
+    return int(checksum, 2)
+
 
 # Função para verificar se recebeu ACK
 def ack_recebido():
