@@ -49,7 +49,7 @@ def calcula_checksum(data):
     # Calcula o complemento de 1 (inversão dos bits)
     checksum = ''.join('0' if bit == '1' else '1' for bit in total_bin)
 
-    # Converte o checksum binário para inteiro
+    # Converte o checksum binário para inteiro para facilitar a conferencia
     return int(checksum, 2)
 
 
@@ -65,11 +65,6 @@ def reconstruir_mensagem(data):
     header = data[:16]
     message_in_bytes = data[16:]
     tamanho_fragmento, indice_fragmento, total_fragmentos, checksum = struct.unpack('!IIII', header)
-
-    # Verifica Checksum
-    if checksum != calcula_checksum(message_in_bytes):
-        print("fragmento com checksum inválido, ignorando.")
-        return
 
     if len(lista_fragmentos) < total_fragmentos:
         add = total_fragmentos - len(lista_fragmentos)
@@ -128,6 +123,7 @@ def gerar_fragmento(dados, tamanho_fragmento, indice_fragmento, total_fragmentos
     data = dados[:tamanho_fragmento]
     checksum = calcula_checksum(data)
     header = struct.pack('!IIII', tamanho_fragmento, indice_fragmento, total_fragmentos, checksum)
+
     return header + data
 
 def envia_fragmento(fragmento, addr):

@@ -50,12 +50,14 @@ def calcula_checksum(data):
 
     # Converte o checksum binário para inteiro
     return int(checksum, 2)
-    
+
 # Função que cria fragmentos
 def gerar_fragmento(dados, tamanho_fragmento, indice_fragmento, total_fragmentos):
     data = dados[:tamanho_fragmento]
     checksum = calcula_checksum(data)
     header = struct.pack('!IIII', tamanho_fragmento, indice_fragmento, total_fragmentos, checksum)
+    print(f"[ENVIO] Checksum gerado: {checksum} (Fragmento {indice_fragmento}/{total_fragmentos})")
+
     return header + data
 
 # Função para enviar ACK
@@ -71,6 +73,9 @@ def reconstruir_mensagem(data, addr):
     header = data[:16]
     message_in_bytes = data[16:]
     tamanho_fragmento, indice_fragmento, total_fragmentos, checksum = struct.unpack('!IIII', header)
+
+    print(f"[RECEPÇÃO] Checksum recebido: {checksum}")
+    print(f"[RECEPÇÃO] Checksum calculado: {calcula_checksum(message_in_bytes)}")
 
     # Verificar o Checksum
     checksum_calculado = calcula_checksum(message_in_bytes)
