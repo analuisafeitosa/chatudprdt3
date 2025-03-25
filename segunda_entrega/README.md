@@ -45,7 +45,7 @@ O cliente permitirá a entrada de mensagens que serão enviadas para os demais p
 O protocolo RDT 3.0 garante a entrega confiável das mensagens utilizando os seguintes mecanismos:
 
 1. **Checksum**: Cada pacote enviado inclui um checksum para verificar a integridade dos dados.
-2. **ACK/NACK**: O destinatário responde com um pacote de confirmação (`ACK`) se os dados estiverem corretos ou um `NACK` se houver erro.
+2. **ACK**: O destinatário responde com um pacote de confirmação (`ACK`) se os dados estiverem corretos.
 3. **Timeout e Retransmissão**: Se um `ACK` não for recebido dentro do tempo limite, o pacote é retransmitido.
 4. **Controle de Sequência**: Cada pacote recebe um número de sequência para evitar problemas de duplicidade.
 5. **Threads**: O cliente e o servidor utilizam threads para permitir envio e recebimento de mensagens simultaneamente.
