@@ -56,7 +56,7 @@ def gerar_fragmento(dados, tamanho_fragmento, indice_fragmento, total_fragmentos
     data = dados[:tamanho_fragmento]
     checksum = calcula_checksum(data)
     header = struct.pack('!IIII', tamanho_fragmento, indice_fragmento, total_fragmentos, checksum)
-    print(f"[ENVIO] Checksum gerado: {checksum} (Fragmento {indice_fragmento}/{total_fragmentos})")
+    print(f"[ENVIO] Checksum gerado: {checksum} (Fragmento {indice_fragmento + 1}/{total_fragmentos})")
 
     return header + data
 
