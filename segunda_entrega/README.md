@@ -14,30 +14,35 @@ Este projeto implementa um sistema de chat básico utilizando o protocolo de tra
 - Capacidade de múltiplos clientes se conectarem ao servidor.
 
 ## Requisitos
-- Python 3.x
+- Python
 - Biblioteca `socket`, `struct`, `threading`, `os`, `math` e `time` (nativas do Python)
 
 ## Estrutura do Projeto
 ```
 /
-|-- client.py  # Implementação do cliente
-|-- server.py  # Implementação do servidor
+|-- cliente2.py  # Implementação do cliente
+|-- servidor2.py  # Implementação do servidor
 |-- README.md  # Documentação do projeto
 ```
 
 ## Como Executar
 
-### 1. Iniciar o Servidor
-Abra um terminal e execute:
+### 1. Acesse a pasta da segunda entrega
+Abra um terminal e execute 
 ```bash
-python server.py
+cd segunda_entrega
+```
+### 2. Iniciar o Servidor
+Nesse mesmo terminal execute:
+```bash
+python servidor2.py
 ```
 O servidor ficará aguardando conexões de clientes e processando mensagens recebidas.
 
-### 2. Iniciar um Cliente
-Em outro terminal, execute:
+### 3. Iniciar um Cliente
+Em outro terminal, repita o passo 1, após isso execute:
 ```bash
-python client.py
+python cliente2.py
 ```
 O cliente permitirá a entrada de mensagens que serão enviadas para os demais participantes do chat.
 
