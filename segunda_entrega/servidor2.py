@@ -104,7 +104,7 @@ def reconstruir_mensagem(data, addr):
     # Envia ACK após receber o fragmento
     envia_ack(addr)
 
-# Processa a mensagem e a trata caso seja uma confirmação de Login, Log out ou apenas uma mensagem qualquer.
+# Processa a mensagem e a trata caso seja uma confirmação de Login, Log out ou apenas uma mensagem qualquer
 def processar_mensagem_recebida(addr):
     with open('received_message.txt', 'r') as file:
         file_content = file.read()
