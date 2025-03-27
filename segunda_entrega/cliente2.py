@@ -75,7 +75,9 @@ def reconstruir_mensagem(data):
     # Envia ACK após receber o fragmento
     envia_ack()
 
-    # Verifica se todos os fragmentos foram recebidos e reseta a lista para o próximo pacote ou se houve perda de pacote
+    
+    # Verifica se todos os fragmentos do pacote foram recebidos corretamente e, caso contrário, identifica a perda de pacotes. 
+    # Em seguida, reinicia a lista de fragmentos para processar o próximo pacote.
     if contador_fragmentos == total_fragmentos:
         with open('received_message.txt', 'wb') as file:
             for fragmento in lista_fragmentos:
@@ -130,16 +132,16 @@ def envia_fragmento(fragmento, addr):
     global flag_recebimento_ack
     flag_recebimento_ack = False
     # Loop de ACK
-    while not flag_recebimento_ack:  # Enquanto a função "ACK Received" não transformar a flag em True, reenvia a mensagem
+    while not flag_recebimento_ack:  # Enquanto a função "ACK Received" não indicar true, continuará ocorrendo o reenvio da mensagem
         client.sendto(fragmento, addr)
         start = time.time()
         while time.time() - start < timeout:
-            if flag_recebimento_ack:
+            if flag_recebimento_ack: # Aqui definimos finalmente que quando indicar true o processo de reenvio seja interrompido
                 break
 
 def main():
     username = ''
-    # Loop principal
+    # Loop principal, aqui ocorrerá a interação do usuário com o código
     while True:
         message = input("")
         # Trata o login ideal do usuário
@@ -161,8 +163,8 @@ def main():
             enviar_txt()
             print("Você saiu do chat. Até logo!")
             exit()  # Encerra a conexão
+        
         # Trata a mensagem do usuário
-
         else:
             if username:
                 timestamp = datetime.now().strftime('%H:%M:%S - %d/%m/%Y')
@@ -171,7 +173,7 @@ def main():
                     file.write(formatted_message)
                 enviar_txt()
             else:
-                print("Você precisa se conectar primeiro digitando 'Oi, meu nome eh' seguido do seu nome.")
+                print("Você precisa se conectar primeiro digitando 'Oi, meu nome eh' seguido do seu nome.") # Aqui também garantimos que o cliente possui um username válido
 
 # Função que manda a mensagem
 def enviar_txt():

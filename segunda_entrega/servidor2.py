@@ -72,8 +72,9 @@ def reconstruir_mensagem(data, addr):
 
     header = data[:16]
     message_in_bytes = data[16:]
-    tamanho_fragmento, indice_fragmento, total_fragmentos, checksum = struct.unpack('!IIII', header)
+    tamanho_fragmento, indice_fragmento, total_fragmentos, checksum = struct.unpack('!IIII', header)  # Desempacota o cabeçalho 
 
+    # Exibe os valores de checksum para comparação
     print(f"[RECEPÇÃO] Checksum recebido: {checksum}")
     print(f"[RECEPÇÃO] Checksum calculado: {calcula_checksum(message_in_bytes)}")
 
@@ -110,11 +111,11 @@ def processar_mensagem_recebida(addr):
     os.remove('received_message.txt')
     for line in file_content.strip().split('\n'):
         line = line.strip()
-        if "SIGNUP_TAG:" in line:
+        if "SIGNUP_TAG:" in line: #Login
             name = line.split(":")[1]
             sent_msg = f"{name} entrou na sala"
             messages.put(sent_msg)
-        elif "SIGNOUT_TAG:" in line:
+        elif "SIGNOUT_TAG:" in line: #Log out
             name = line.split(":")[1]
             sent_msg = f"{name} saiu da sala"
             print(f"{addr} saiu da sala")
@@ -128,7 +129,7 @@ def processar_mensagem_recebida(addr):
 
 def envia_fragmento(fragment, addr):
     ack_event = threading.Event()
-    ack_received = False
+    ack_received = False # Variável para verificar se o ACK foi recebido
     print(f"\nMensagem enviada para {addr}\n")
     
     def receive_ack():
@@ -139,7 +140,7 @@ def envia_fragmento(fragment, addr):
                 header = data[:16]
                 message_type = struct.unpack('!I', header[:4])[0]
                 if message_type == 1:  # ACK
-                    ack_received = True
+                    ack_received = True # Marca que o ACK foi recebido com sucesso
                     ack_event.set()
                     print(f'ACK recebido com sucesso {address}')
             except socket.timeout:
