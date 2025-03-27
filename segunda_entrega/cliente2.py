@@ -146,10 +146,13 @@ def main():
         if message.startswith("oi, meu nome eh") or message.startswith("Oi, meu nome eh"):
             username = message[len("oi, meu nome eh") + 1:].strip()
             sent_msg = f"SIGNUP_TAG:{username}"
-            with open('message_client.txt', 'w') as file:
-                file.write(sent_msg)
-            enviar_txt()
-            print(f"Usuário {username}, você está conectado.")
+            if username.strip() == "": #Checagem se é um username válido
+                print("Você precisa se conectar primeiro digitando 'Oi, meu nome eh' seguido do seu nome.")
+            else:
+                with open('message_client.txt', 'w') as file:
+                    file.write(sent_msg)
+                enviar_txt()
+                print(f"Usuário {username}, você está conectado.")
         # Trata a saída do usuário
         elif username and message == "tchau":
             sent_msg = f"SIGNOUT_TAG:{username}"
@@ -159,6 +162,7 @@ def main():
             print("Você saiu do chat. Até logo!")
             exit()  # Encerra a conexão
         # Trata a mensagem do usuário
+
         else:
             if username:
                 timestamp = datetime.now().strftime('%H:%M:%S - %d/%m/%Y')
